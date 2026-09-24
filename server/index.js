@@ -14,7 +14,7 @@ const cors = require('cors');
 const app = express();
 
 // Define the port on which the backend server will run
-const PORT = 5001;
+const PORT = process.env.PORT || 5001;
 
 // Create a Resend instance using the API key stored in the .env file
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -103,6 +103,6 @@ app.post('/api/subscribe', async (req, res) => {
 });
 
 // Start the backend server
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
 });
