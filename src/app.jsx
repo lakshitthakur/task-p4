@@ -9,6 +9,7 @@ import SignupPage from './pages/sup';
 import PostPage from './pages/PostPage';
 import PricingPage from './pages/PricingPage';
 import './app.css';
+import BrowsePosts from './pages/BrowsePosts';
 
 function App() {
   return (
@@ -23,6 +24,7 @@ function App() {
               <Route path="/signup" element={<SignupPage />} />
               <Route path="/post" element={<PostPage />} />
               <Route path="/pricing" element={<PricingPage />} />
+              <Route path="/browse" element={<BrowsePosts />} />
             </Routes>
           </main>
           <Footer />

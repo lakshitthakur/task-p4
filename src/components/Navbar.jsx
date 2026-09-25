@@ -14,22 +14,61 @@ function Navbar() {
   return (
     <nav className="navbar">
       <Link to="/" className="nav-logo">DEV@Deakin</Link>
-      <input type="text" className="nav-search" placeholder="Search..." />
+
+      <input
+        type="text"
+        className="nav-search"
+        placeholder="Search..."
+      />
+
       <div className="nav-links">
-        <Link to="/post" className="nav-post">Post</Link>
+        <Link to="/browse" className="nav-post">
+          Browse Posts
+        </Link>
+
+        <Link to="/post" className="nav-post">
+          Post
+        </Link>
+
         {/* Task D1 Required Pricing Link */}
-        <Link to="/pricing" className="nav-post">Pricing</Link>
+        <Link to="/pricing" className="nav-post">
+          Pricing
+        </Link>
 
         {currentUser ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <span className={`plan-badge ${currentUser.subscriptionPlan?.toLowerCase()}`}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '1rem'
+            }}
+          >
+            <span
+              className={`plan-badge ${currentUser.subscriptionPlan?.toLowerCase()}`}
+            >
               {currentUser.subscriptionPlan || 'Free'} Plan
             </span>
-            <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>{currentUser.name}</span>
-            <button onClick={handleLogout} className="nav-logout-btn">Logout</button>
+
+            <span
+              style={{
+                fontSize: '0.9rem',
+                fontWeight: 600
+              }}
+            >
+              {currentUser.name}
+            </span>
+
+            <button
+              onClick={handleLogout}
+              className="nav-logout-btn"
+            >
+              Logout
+            </button>
           </div>
         ) : (
-          <Link to="/login" className="nav-login-btn">Login</Link>
+          <Link to="/login" className="nav-login-btn">
+            Login
+          </Link>
         )}
       </div>
     </nav>
