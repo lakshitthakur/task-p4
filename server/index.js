@@ -429,6 +429,87 @@ app.post('/api/posts', async (req, res) => {
 
 });
 
+// ============================================================
+// BROWSE POSTS
+// ============================================================
+
+app.get('/api/posts', async (req, res) => {
+  try {
+    // Get the optional Firebase ID token
+    const authorizationHeader = req.headers.authorization;
+
+    let userPlan = 'Free';
+
+    // If the visitor is logged in, determine their subscription plan
+    if (authorizationHeader && authorizationHeader.startsWith('Bearer ')) {
+      const idToken = authorizationHeader.split('Bearer ')[1];
+
+      if (idToken) {
+        try {
+          // Verify the Firebase ID token
+          const decodedToken = await getAuth().verifyIdToken(idToken);
+
+          // Get the logged-in user's Firestore profile
+          const userDocument = await db
+            .collection('users')
+            .doc(decodedToken.uid)
+            .get();
+
+          if (userDocument.exists) {
+            const userData = userDocument.data();
+
+            // Read the user's subscription plan
+            userPlan = userData.subscriptionPlan || 'Free';
+          }
+        } catch (authError) {
+          // Invalid or expired token means treat the visitor as Free
+          console.log('Browse Posts authentication failed:', authError.message);
+          userPlan = 'Free';
+        }
+      }
+    }
+
+    // Get posts from Firestore
+    const postsSnapshot = await db
+      .collection('posts')
+      .orderBy('createdAt', 'desc')
+      .get();
+
+    const posts = [];
+
+    postsSnapshot.forEach((document) => {
+      const post = document.data();
+
+      // Always allow Free posts
+      if (post.plan === 'Free') {
+        posts.push({
+          id: document.id,
+          ...post
+        });
+      }
+
+      // Only Paid users can receive Paid posts
+      if (post.plan === 'Paid' && userPlan === 'Paid') {
+        posts.push({
+          id: document.id,
+          ...post
+        });
+      }
+    });
+
+    return res.status(200).json({
+      userPlan,
+      posts
+    });
+
+  } catch (error) {
+    console.error('Browse posts error:', error);
+
+    return res.status(500).json({
+      message: 'Something went wrong while loading posts.'
+    });
+  }
+});
 
 // ============================================================
 // START SERVER
