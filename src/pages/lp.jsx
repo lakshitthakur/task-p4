@@ -1,123 +1,297 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../firebase';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+
+import { auth, db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 
 function LoginPage() {
-  // Local state for tracking form input values
+
+  // Local state for email and password
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  // UI state for managing error feedback and loading indicators
+  // UI state
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // Authentication context and navigation hooks
+  // Authentication context and navigation
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  /**
-   * Handles submission: performs input validation, queries Firestore for matching
-   * credentials, stores the user session via AuthContext, and redirects to home.
-   */
+
+  // ----------------------------------------------------------
+  // HANDLE LOGIN
+  // ----------------------------------------------------------
+
   const handleLoginSubmit = async (e) => {
+
     e.preventDefault();
+
     setErrorMessage('');
 
-    // Ensure mandatory input fields are filled before submitting
+    // Validate input
     if (!email.trim() || !password) {
-      setErrorMessage('Please provide both your email and password.');
+
+      setErrorMessage(
+        'Please provide both your email and password.'
+      );
+
       return;
     }
 
     setIsLoading(true);
 
+
     try {
-      // Query the Firestore 'users' collection for a document matching the entered email and password
-      const usersRef = collection(db, 'users');
-      const authQuery = query(
-        usersRef,
-        where('email', '==', email.toLowerCase().trim()),
-        where('password', '==', password)
+
+      // ------------------------------------------------------
+      // FIREBASE AUTHENTICATION
+      // ------------------------------------------------------
+
+      const userCredential =
+        await signInWithEmailAndPassword(
+          auth,
+          email.trim().toLowerCase(),
+          password
+        );
+
+
+      // Firebase authenticated user
+      const firebaseUser = userCredential.user;
+
+
+      // ------------------------------------------------------
+      // GET USER PROFILE FROM FIRESTORE
+      // ------------------------------------------------------
+
+      const userRef = doc(
+        db,
+        'users',
+        firebaseUser.uid
       );
 
-      const querySnapshot = await getDocs(authQuery);
+      const userSnapshot = await getDoc(userRef);
 
-      // Check if a matching user document was returned
-      if (!querySnapshot.empty) {
-        const userDoc = querySnapshot.docs[0];
-        const userData = {
-          id: userDoc.id,
-          ...userDoc.data(),
-          // Default to Free plan if subscriptionPlan is not set in Firestore
-          subscriptionPlan: userDoc.data().subscriptionPlan || 'Free'
-        };
 
-        // Save authenticated user data into global state and localStorage
-        login(userData);
+      // ------------------------------------------------------
+      // CHECK USER PROFILE
+      // ------------------------------------------------------
 
-        // Redirect user to the home page upon successful authentication
-        navigate('/');
-      } else {
-        // Return clear user feedback if credentials do not match
-        setErrorMessage('Incorrect email or password. Please try again or sign up for a new account.');
+      if (!userSnapshot.exists()) {
+
+        setErrorMessage(
+          'Your Firebase account exists, but your DEV@Deakin user profile was not found.'
+        );
+
+        return;
       }
+
+
+      // Get Firestore user information
+      const firestoreUser = userSnapshot.data();
+
+
+      // ------------------------------------------------------
+      // CREATE USER OBJECT
+      // ------------------------------------------------------
+
+      const userData = {
+
+        // Firebase UID
+        id: firebaseUser.uid,
+
+        // Firebase email
+        email: firebaseUser.email,
+
+        // Other Firestore user information
+        ...firestoreUser,
+
+        // Default subscription plan
+        subscriptionPlan:
+          firestoreUser.subscriptionPlan || 'Free'
+
+      };
+
+
+      // ------------------------------------------------------
+      // SAVE USER IN AUTH CONTEXT
+      // ------------------------------------------------------
+
+      login(userData);
+
+
+      // ------------------------------------------------------
+      // REDIRECT
+      // ------------------------------------------------------
+
+      navigate('/');
+
+
     } catch (err) {
-      // Catch and display any Firestore or network issues
-      setErrorMessage('Authentication error: ' + err.message);
+
+      console.error(
+        'Firebase login error:',
+        err
+      );
+
+
+      // Firebase authentication errors
+      if (err.code === 'auth/invalid-credential') {
+
+        setErrorMessage(
+          'Incorrect email or password. Please try again.'
+        );
+
+      } else if (err.code === 'auth/user-not-found') {
+
+        setErrorMessage(
+          'No account was found with this email address.'
+        );
+
+      } else if (err.code === 'auth/wrong-password') {
+
+        setErrorMessage(
+          'Incorrect password. Please try again.'
+        );
+
+      } else if (err.code === 'auth/invalid-email') {
+
+        setErrorMessage(
+          'Please enter a valid email address.'
+        );
+
+      } else {
+
+        setErrorMessage(
+          'Authentication error: ' + err.message
+        );
+
+      }
+
     } finally {
+
       setIsLoading(false);
+
     }
+
   };
 
+
+  // ----------------------------------------------------------
+  // JSX
+  // ----------------------------------------------------------
+
   return (
+
     <div className="auth-wrapper">
+
       <div className="auth-card">
-        {/* Navigation link to direct unregistered users to the sign-up page */}
+
+
+        {/* Sign up link */}
+
         <div className="auth-top-action">
-          <Link to="/signup" className="switch-auth-link">Sign up</Link>
+
+          <Link
+            to="/signup"
+            className="switch-auth-link"
+          >
+            Sign up
+          </Link>
+
         </div>
+
 
         <h2>Login</h2>
 
-        {/* Dynamic error display banner */}
+
+        {/* Error message */}
+
         {errorMessage && (
+
           <div className="auth-feedback-banner error">
+
             {errorMessage}
+
           </div>
+
         )}
 
-        <form onSubmit={handleLoginSubmit} className="auth-form" noValidate>
+
+        <form
+          onSubmit={handleLoginSubmit}
+          className="auth-form"
+          noValidate
+        >
+
+
+          {/* Email */}
+
           <div className="form-group">
-            <label htmlFor="login-email">Your email</label>
+
+            <label htmlFor="login-email">
+              Your email
+            </label>
+
             <input
               id="login-email"
               type="email"
               placeholder="Enter your email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) =>
+                setEmail(e.target.value)
+              }
             />
+
           </div>
 
+
+          {/* Password */}
+
           <div className="form-group">
-            <label htmlFor="login-password">Your password</label>
+
+            <label htmlFor="login-password">
+              Your password
+            </label>
+
             <input
               id="login-password"
               type="password"
               placeholder="Enter your password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) =>
+                setPassword(e.target.value)
+              }
             />
+
           </div>
 
-          <button type="submit" className="auth-submit-btn" disabled={isLoading}>
-            {isLoading ? 'Verifying...' : 'Login'}
+
+          {/* Login button */}
+
+          <button
+            type="submit"
+            className="auth-submit-btn"
+            disabled={isLoading}
+          >
+
+            {isLoading
+              ? 'Signing in...'
+              : 'Login'
+            }
+
           </button>
+
         </form>
+
       </div>
+
     </div>
+
   );
+
 }
 
 export default LoginPage;

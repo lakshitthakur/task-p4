@@ -1,9 +1,15 @@
 import React, { useState } from 'react';
+
 import { useNavigate, Link } from 'react-router-dom';
-import { collection, addDoc, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../firebase';
+
+import { createUserWithEmailAndPassword } from 'firebase/auth';
+
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+
+import { auth, db } from '../firebase';
 
 function SignupPage() {
+
   // Store form input fields locally
   const [formData, setFormData] = useState({
     name: '',
@@ -12,103 +18,294 @@ function SignupPage() {
     confirmPassword: ''
   });
 
-  // State handles for dynamic UI feedback banners
+  // UI feedback
   const [errorMessage, setErrorMessage] = useState('');
+
   const [isSubmitting, setIsSubmitting] = useState(false);
+
   const navigate = useNavigate();
 
-  // Track and update form field changes
+
+  // ----------------------------------------------------------
+  // HANDLE INPUT CHANGES
+  // ----------------------------------------------------------
+
   const handleInputChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value
+    });
+
   };
 
-  // Perform full client-side field validation before sending to Firestore
+
+  // ----------------------------------------------------------
+  // VALIDATE FORM
+  // ----------------------------------------------------------
+
   const validateForm = () => {
-    const { name, email, password, confirmPassword } = formData;
 
-    if (!name.trim() || !email.trim() || !password || !confirmPassword) {
-      setErrorMessage('All fields marked with an asterisk (*) are required.');
+    const {
+      name,
+      email,
+      password,
+      confirmPassword
+    } = formData;
+
+
+    // Check required fields
+    if (
+      !name.trim() ||
+      !email.trim() ||
+      !password ||
+      !confirmPassword
+    ) {
+
+      setErrorMessage(
+        'All fields marked with an asterisk (*) are required.'
+      );
+
       return false;
+
     }
 
-    // Basic RFC email format checking
-    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailPattern.test(email)) {
-      setErrorMessage('Please provide a valid email address (e.g., user@example.com).');
+
+    // Validate email
+    const emailPattern =
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailPattern.test(email.trim())) {
+
+      setErrorMessage(
+        'Please provide a valid email address.'
+      );
+
       return false;
+
     }
 
-    // Enforce password security constraints
+
+    // Validate password length
     if (password.length < 6) {
-      setErrorMessage('Password must be at least 6 characters long.');
+
+      setErrorMessage(
+        'Password must be at least 6 characters long.'
+      );
+
       return false;
+
     }
 
-    // Confirm passwords match exactly
+
+    // Confirm password
     if (password !== confirmPassword) {
-      setErrorMessage('Password and Confirm Password do not match.');
+
+      setErrorMessage(
+        'Password and Confirm Password do not match.'
+      );
+
       return false;
+
     }
+
 
     return true;
+
   };
 
+
+  // ----------------------------------------------------------
+  // SIGN UP
+  // ----------------------------------------------------------
+
   const handleSignupSubmit = async (e) => {
+
     e.preventDefault();
+
     setErrorMessage('');
 
-    // Abort if client validation fails
-    if (!validateForm()) return;
+
+    // Run validation
+    if (!validateForm()) {
+      return;
+    }
+
 
     setIsSubmitting(true);
 
-    try {
-      // 1. Query Firestore to ensure this email is not already registered
-      const usersRef = collection(db, 'users');
-      const emailQuery = query(usersRef, where('email', '==', formData.email.toLowerCase().trim()));
-      const duplicateSnapshot = await getDocs(emailQuery);
 
-      if (!duplicateSnapshot.empty) {
-        setErrorMessage('An account with this email already exists. Please login instead.');
-        setIsSubmitting(false);
-        return;
+    try {
+
+      const email =
+        formData.email.trim().toLowerCase();
+
+
+      // ------------------------------------------------------
+      // CREATE FIREBASE AUTHENTICATION ACCOUNT
+      // ------------------------------------------------------
+
+      const userCredential =
+        await createUserWithEmailAndPassword(
+          auth,
+          email,
+          formData.password
+        );
+
+
+      // Firebase Authentication user
+      const firebaseUser =
+        userCredential.user;
+
+
+      // ------------------------------------------------------
+      // CREATE FIRESTORE USER PROFILE
+      // ------------------------------------------------------
+
+      await setDoc(
+        doc(db, 'users', firebaseUser.uid),
+        {
+
+          // User's name
+          name: formData.name.trim(),
+
+          // User's email
+          email: email,
+
+          // Default subscription plan
+          subscriptionPlan: 'Free',
+
+          // Account creation time
+          createdAt: serverTimestamp()
+
+        }
+      );
+
+
+      // ------------------------------------------------------
+      // REDIRECT TO LOGIN
+      // ------------------------------------------------------
+
+      navigate('/login');
+
+
+    } catch (err) {
+
+      console.error(
+        'Registration error:',
+        err
+      );
+
+
+      // Email already registered
+      if (
+        err.code === 'auth/email-already-in-use'
+      ) {
+
+        setErrorMessage(
+          'An account with this email already exists. Please login instead.'
+        );
+
       }
 
-      // 2. Add user document to Firestore "users" collection
-      await addDoc(collection(db, 'users'), {
-        name: formData.name.trim(),
-        email: formData.email.toLowerCase().trim(),
-        password: formData.password, // Frontend-level per current assignment scope
-        createdAt: new Date().toISOString()
-      });
+      // Invalid email
+      else if (
+        err.code === 'auth/invalid-email'
+      ) {
 
-      // 3. Inform user and automatically redirect to the login page
-      navigate('/login');
-    } catch (err) {
-      setErrorMessage('Registration error: ' + err.message);
+        setErrorMessage(
+          'Please provide a valid email address.'
+        );
+
+      }
+
+      // Weak password
+      else if (
+        err.code === 'auth/weak-password'
+      ) {
+
+        setErrorMessage(
+          'Password must be at least 6 characters long.'
+        );
+
+      }
+
+      // General Firebase error
+      else {
+
+        setErrorMessage(
+          'Registration error: ' + err.message
+        );
+
+      }
+
     } finally {
+
       setIsSubmitting(false);
+
     }
+
   };
 
+
+  // ----------------------------------------------------------
+  // JSX
+  // ----------------------------------------------------------
+
   return (
+
     <div className="auth-wrapper">
+
       <div className="auth-card">
+
+
+        {/* Login link */}
+
         <div className="auth-top-action">
-          <Link to="/login" className="switch-auth-link">Login instead</Link>
+
+          <Link
+            to="/login"
+            className="switch-auth-link"
+          >
+            Login instead
+          </Link>
+
         </div>
 
-        <h2>Create a DEV@Deakin Account</h2>
+
+        <h2>
+          Create a DEV@Deakin Account
+        </h2>
+
+
+        {/* Error message */}
 
         {errorMessage && (
+
           <div className="auth-feedback-banner error">
+
             {errorMessage}
+
           </div>
+
         )}
 
-        <form onSubmit={handleSignupSubmit} className="auth-form" noValidate>
+
+        <form
+          onSubmit={handleSignupSubmit}
+          className="auth-form"
+          noValidate
+        >
+
+
+          {/* Name */}
+
           <div className="form-group">
-            <label htmlFor="name">Name*</label>
+
+            <label htmlFor="name">
+              Name*
+            </label>
+
             <input
               id="name"
               name="name"
@@ -117,10 +314,18 @@ function SignupPage() {
               value={formData.name}
               onChange={handleInputChange}
             />
+
           </div>
 
+
+          {/* Email */}
+
           <div className="form-group">
-            <label htmlFor="email">Email*</label>
+
+            <label htmlFor="email">
+              Email*
+            </label>
+
             <input
               id="email"
               name="email"
@@ -129,10 +334,18 @@ function SignupPage() {
               value={formData.email}
               onChange={handleInputChange}
             />
+
           </div>
 
+
+          {/* Password */}
+
           <div className="form-group">
-            <label htmlFor="password">Password*</label>
+
+            <label htmlFor="password">
+              Password*
+            </label>
+
             <input
               id="password"
               name="password"
@@ -141,10 +354,18 @@ function SignupPage() {
               value={formData.password}
               onChange={handleInputChange}
             />
+
           </div>
 
+
+          {/* Confirm password */}
+
           <div className="form-group">
-            <label htmlFor="confirmPassword">Confirm password*</label>
+
+            <label htmlFor="confirmPassword">
+              Confirm password*
+            </label>
+
             <input
               id="confirmPassword"
               name="confirmPassword"
@@ -153,15 +374,33 @@ function SignupPage() {
               value={formData.confirmPassword}
               onChange={handleInputChange}
             />
+
           </div>
 
-          <button type="submit" className="auth-submit-btn" disabled={isSubmitting}>
-            {isSubmitting ? 'Creating account...' : 'Create'}
+
+          {/* Submit */}
+
+          <button
+            type="submit"
+            className="auth-submit-btn"
+            disabled={isSubmitting}
+          >
+
+            {isSubmitting
+              ? 'Creating account...'
+              : 'Create'
+            }
+
           </button>
+
         </form>
+
       </div>
+
     </div>
+
   );
+
 }
 
 export default SignupPage;
