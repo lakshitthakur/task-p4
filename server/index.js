@@ -16,6 +16,8 @@ const { getAuth } = require('firebase-admin/auth');
 // Import the Firestore database
 const { db } = require('./firebaseAdmin');
 
+const authenticate = require('./middleware/authenticate');
+
 // Create an Express application
 const app = express();
 
@@ -110,35 +112,29 @@ app.post('/api/subscribe', async (req, res) => {
   }
 });
 
-
 // ============================================================
-// CREATE POST
+// SEND CUSTOM EMAIL VERIFICATION
 // ============================================================
 
-app.post('/api/posts', async (req, res) => {
-
+app.post('/api/send-verification-email', async (req, res) => {
   try {
-
-    // --------------------------------------------------------
-    // 1. CHECK AUTHENTICATION
-    // --------------------------------------------------------
-
     const authorizationHeader = req.headers.authorization;
 
+    // Check authentication header
     if (!authorizationHeader) {
       return res.status(401).json({
-        message: 'You must be logged in to create a post.'
+        message: 'Authentication required.'
       });
     }
 
-    // Check that the Authorization header uses Bearer authentication
+    // Check Bearer format
     if (!authorizationHeader.startsWith('Bearer ')) {
       return res.status(401).json({
         message: 'Invalid authentication format.'
       });
     }
 
-    // Extract the Firebase ID token
+    // Extract Firebase ID token
     const idToken = authorizationHeader.split('Bearer ')[1];
 
     if (!idToken) {
@@ -147,14 +143,194 @@ app.post('/api/posts', async (req, res) => {
       });
     }
 
-    // Verify the Firebase ID token using Firebase Admin SDK
+    // Verify Firebase ID token
     const decodedToken = await getAuth().verifyIdToken(idToken);
 
-    // Firebase user ID
-    const userId = decodedToken.uid;
+    // Get Firebase user
+    const firebaseUser = await getAuth().getUser(
+      decodedToken.uid
+    );
 
-    console.log('Authenticated user:', userId);
+    // Do not send another verification email
+    // if the account is already verified.
+    if (firebaseUser.emailVerified) {
+      return res.status(400).json({
+        message: 'Your email address is already verified.'
+      });
+    }
 
+    // Generate Firebase verification link
+    const verificationLink =
+      await getAuth().generateEmailVerificationLink(
+        firebaseUser.email
+      );
+
+    // Send custom verification email using Resend
+    const { data, error } = await resend.emails.send({
+      from: 'DEV@Deakin <onboarding@resend.dev>',
+      to: [firebaseUser.email],
+      subject: 'Verify your DEV@Deakin account',
+      html: `
+        <!DOCTYPE html>
+        <html>
+          <body
+            style="
+              margin: 0;
+              padding: 0;
+              background-color: #f5f7fb;
+              font-family: Arial, sans-serif;
+            "
+          >
+
+            <div
+              style="
+                max-width: 600px;
+                margin: 40px auto;
+                background: #ffffff;
+                border-radius: 12px;
+                padding: 40px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+              "
+            >
+
+              <h1
+                style="
+                  margin-top: 0;
+                  color: #111827;
+                "
+              >
+                Verify your DEV@Deakin account
+              </h1>
+
+              <p
+                style="
+                  color: #4b5563;
+                  font-size: 16px;
+                  line-height: 1.6;
+                "
+              >
+                Thanks for creating a DEV@Deakin account.
+                Please verify your email address before
+                logging in.
+              </p>
+
+              <div style="text-align: center; margin: 32px 0;">
+
+                <a
+                  href="${verificationLink}"
+                  style="
+                    display: inline-block;
+                    padding: 14px 28px;
+                    background-color: #2563eb;
+                    color: #ffffff;
+                    text-decoration: none;
+                    border-radius: 8px;
+                    font-weight: bold;
+                  "
+                >
+                  Verify My Email
+                </a>
+
+              </div>
+
+              <p
+                style="
+                  color: #6b7280;
+                  font-size: 14px;
+                  line-height: 1.5;
+                "
+              >
+                If you did not create a DEV@Deakin account,
+                you can safely ignore this email.
+              </p>
+
+              <hr
+                style="
+                  border: none;
+                  border-top: 1px solid #e5e7eb;
+                  margin: 30px 0;
+                "
+              />
+
+              <p
+                style="
+                  color: #9ca3af;
+                  font-size: 12px;
+                  text-align: center;
+                "
+              >
+                DEV@Deakin
+              </p>
+
+            </div>
+
+          </body>
+        </html>
+      `
+    });
+
+    // Handle Resend errors
+    if (error) {
+      console.error(
+        'Verification email Resend error:',
+        error
+      );
+
+      return res.status(500).json({
+        message: 'Unable to send verification email.'
+      });
+    }
+
+    console.log(
+      'Verification email sent successfully:',
+      data
+    );
+
+    return res.status(200).json({
+      message: 'Verification email sent successfully.'
+    });
+
+  } catch (error) {
+
+    console.error(
+      'Verification email error:',
+      error
+    );
+
+    // Firebase authentication errors
+    if (
+      error.code === 'auth/id-token-expired' ||
+      error.code === 'auth/invalid-id-token' ||
+      error.code === 'auth/argument-error'
+    ) {
+      return res.status(401).json({
+        message:
+          'Your login session is invalid or expired. Please log in again.'
+      });
+    }
+
+    return res.status(500).json({
+      message:
+        'Something went wrong while sending the verification email.'
+    });
+  }
+});
+
+// ============================================================
+// CREATE POST
+// ============================================================
+
+app.post('/api/posts', authenticate, async (req, res) => {
+
+  try {
+
+  
+const userId = req.user.uid;
+
+console.log(
+  'Authenticated user:',
+  userId
+);
 
     // --------------------------------------------------------
     // 2. GET USER INFORMATION

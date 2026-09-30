@@ -1,297 +1,459 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-
-import { auth, db } from '../firebase';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 function LoginPage() {
-
-  // Local state for email and password
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-
-  // UI state
-  const [errorMessage, setErrorMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-
-  // Authentication context and navigation
-  const { login } = useAuth();
-  const navigate = useNavigate();
-
-
-  // ----------------------------------------------------------
-  // HANDLE LOGIN
-  // ----------------------------------------------------------
-
-  const handleLoginSubmit = async (e) => {
-
-    e.preventDefault();
-
-    setErrorMessage('');
-
-    // Validate input
-    if (!email.trim() || !password) {
-
-      setErrorMessage(
-        'Please provide both your email and password.'
-      );
-
-      return;
-    }
-
-    setIsLoading(true);
-
-
-    try {
-
-      // ------------------------------------------------------
-      // FIREBASE AUTHENTICATION
-      // ------------------------------------------------------
-
-      const userCredential =
-        await signInWithEmailAndPassword(
-          auth,
-          email.trim().toLowerCase(),
-          password
-        );
-
-
-      // Firebase authenticated user
-      const firebaseUser = userCredential.user;
-
-
-      // ------------------------------------------------------
-      // GET USER PROFILE FROM FIRESTORE
-      // ------------------------------------------------------
-
-      const userRef = doc(
-        db,
-        'users',
-        firebaseUser.uid
-      );
-
-      const userSnapshot = await getDoc(userRef);
-
-
-      // ------------------------------------------------------
-      // CHECK USER PROFILE
-      // ------------------------------------------------------
-
-      if (!userSnapshot.exists()) {
-
-        setErrorMessage(
-          'Your Firebase account exists, but your DEV@Deakin user profile was not found.'
-        );
-
-        return;
-      }
-
-
-      // Get Firestore user information
-      const firestoreUser = userSnapshot.data();
-
-
-      // ------------------------------------------------------
-      // CREATE USER OBJECT
-      // ------------------------------------------------------
-
-      const userData = {
-
-        // Firebase UID
-        id: firebaseUser.uid,
-
-        // Firebase email
-        email: firebaseUser.email,
-
-        // Other Firestore user information
-        ...firestoreUser,
-
-        // Default subscription plan
-        subscriptionPlan:
-          firestoreUser.subscriptionPlan || 'Free'
-
-      };
-
-
-      // ------------------------------------------------------
-      // SAVE USER IN AUTH CONTEXT
-      // ------------------------------------------------------
-
-      login(userData);
-
-
-      // ------------------------------------------------------
-      // REDIRECT
-      // ------------------------------------------------------
-
-      navigate('/');
-
-
-    } catch (err) {
-
-      console.error(
-        'Firebase login error:',
-        err
-      );
-
-
-      // Firebase authentication errors
-      if (err.code === 'auth/invalid-credential') {
-
-        setErrorMessage(
-          'Incorrect email or password. Please try again.'
-        );
-
-      } else if (err.code === 'auth/user-not-found') {
-
-        setErrorMessage(
-          'No account was found with this email address.'
-        );
-
-      } else if (err.code === 'auth/wrong-password') {
-
-        setErrorMessage(
-          'Incorrect password. Please try again.'
-        );
-
-      } else if (err.code === 'auth/invalid-email') {
-
-        setErrorMessage(
-          'Please enter a valid email address.'
-        );
-
-      } else {
-
-        setErrorMessage(
-          'Authentication error: ' + err.message
-        );
-
-      }
-
-    } finally {
-
-      setIsLoading(false);
-
-    }
-
-  };
-
-
-  // ----------------------------------------------------------
-  // JSX
-  // ----------------------------------------------------------
-
-  return (
-
-    <div className="auth-wrapper">
-
-      <div className="auth-card">
-
-
-        {/* Sign up link */}
-
-        <div className="auth-top-action">
-
-          <Link
-            to="/signup"
-            className="switch-auth-link"
-          >
-            Sign up
-          </Link>
+    const navigate = useNavigate();
+
+    const {
+        login,
+        resetPassword,
+        resendVerificationEmail,
+        refreshVerificationStatus
+    } = useAuth();
+
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+
+    const [error, setError] = useState('');
+    const [success, setSuccess] = useState('');
+
+    const [isLoading, setIsLoading] = useState(false);
+    const [isResending, setIsResending] = useState(false);
+    const [isChecking, setIsChecking] = useState(false);
+
+    const [showReset, setShowReset] = useState(false);
+    const [resetMessage, setResetMessage] = useState('');
+
+    const [verificationRequired, setVerificationRequired] =
+        useState(false);
+
+    // Login
+    const handleLoginSubmit = async (event) => {
+        event.preventDefault();
+
+        setError('');
+        setSuccess('');
+        setResetMessage('');
+        setVerificationRequired(false);
+
+        if (!email || !password) {
+            setError('Please enter your email and password.');
+            return;
+        }
+
+        setIsLoading(true);
+
+        try {
+            await login(email, password);
+
+            navigate('/');
+        } catch (loginError) {
+            console.error('Login error:', loginError);
+
+            if (
+                loginError.message?.includes(
+                    'verify your email'
+                )
+            ) {
+                setVerificationRequired(true);
+                setError('');
+            } else if (
+                loginError.code === 'auth/invalid-credential' ||
+                loginError.code === 'auth/wrong-password' ||
+                loginError.code === 'auth/user-not-found'
+            ) {
+                setError(
+                    'Invalid email or password.'
+                );
+            } else if (
+                loginError.code === 'auth/invalid-email'
+            ) {
+                setError(
+                    'Please enter a valid email address.'
+                );
+            } else if (
+                loginError.code === 'auth/too-many-requests'
+            ) {
+                setError(
+                    'Too many login attempts. Please try again later.'
+                );
+            } else {
+                setError(
+                    loginError.message ||
+                    'Unable to log in. Please try again.'
+                );
+            }
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Resend verification email
+    const handleResendVerification = async () => {
+        setError('');
+        setSuccess('');
+
+        setIsResending(true);
+
+        try {
+            await resendVerificationEmail();
+
+            setSuccess(
+                'Verification email sent successfully. Please check your inbox and spam folder.'
+            );
+        } catch (verificationError) {
+            console.error(
+                'Resend verification error:',
+                verificationError
+            );
+
+            setError(
+                verificationError.message ||
+                'Unable to resend the verification email.'
+            );
+        } finally {
+            setIsResending(false);
+        }
+    };
+
+    // Check whether email has now been verified
+    const handleCheckVerification = async () => {
+        setError('');
+        setSuccess('');
+
+        setIsChecking(true);
+
+        try {
+            const verified =
+                await refreshVerificationStatus();
+
+            if (verified) {
+                setSuccess(
+                    'Email verified successfully! Redirecting...'
+                );
+
+                setTimeout(() => {
+                    navigate('/');
+                }, 1000);
+            } else {
+                setError(
+                    'Your email is not verified yet. Please click the verification link in your email and try again.'
+                );
+            }
+        } catch (verificationError) {
+            console.error(
+                'Verification check error:',
+                verificationError
+            );
+
+            setError(
+                'Unable to check your verification status.'
+            );
+        } finally {
+            setIsChecking(false);
+        }
+    };
+
+    // Forgot password
+    const handlePasswordReset = async () => {
+        setError('');
+        setResetMessage('');
+
+        if (!email) {
+            setError(
+                'Enter your email address first.'
+            );
+            return;
+        }
+
+        try {
+            await resetPassword(email);
+
+            setResetMessage(
+                'Password reset email sent. Please check your inbox.'
+            );
+        } catch (resetError) {
+            console.error(
+                'Password reset error:',
+                resetError
+            );
+
+            if (
+                resetError.code ===
+                'auth/user-not-found'
+            ) {
+                setError(
+                    'No account was found with this email address.'
+                );
+            } else if (
+                resetError.code ===
+                'auth/invalid-email'
+            ) {
+                setError(
+                    'Please enter a valid email address.'
+                );
+            } else {
+                setError(
+                    resetError.message ||
+                    'Unable to send password reset email.'
+                );
+            }
+        }
+    };
+
+    return (
+        <div className="auth-page">
+
+            <div className="auth-container">
+
+                <div className="auth-card">
+
+                    <h1>Welcome Back</h1>
+
+                    <p className="auth-subtitle">
+                        Log in to your DEV@Deakin account
+                    </p>
+
+                    {/* Normal error */}
+                    {error && !verificationRequired && (
+                        <div className="auth-error">
+                            {error}
+                        </div>
+                    )}
+
+                    {/* Success */}
+                    {success && (
+                        <div className="auth-success">
+                            {success}
+                        </div>
+                    )}
+
+                    {/* Email verification panel */}
+                    {verificationRequired && (
+                        <div className="verification-panel">
+
+                            <div className="verification-icon">
+                                ✉️
+                            </div>
+
+                            <h2>
+                                Verify your email
+                            </h2>
+
+                            <p>
+                                Your account was created, but
+                                your email address has not been
+                                verified yet.
+                            </p>
+
+                            <p>
+                                We have sent a verification
+                                email to:
+                            </p>
+
+                            <strong>
+                                {email}
+                            </strong>
+
+                            <div className="verification-actions">
+
+                                <button
+                                    type="button"
+                                    onClick={
+                                        handleResendVerification
+                                    }
+                                    disabled={isResending}
+                                    className="primary-button"
+                                >
+                                    {isResending
+                                        ? 'Sending...'
+                                        : 'Resend verification email'}
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={
+                                        handleCheckVerification
+                                    }
+                                    disabled={isChecking}
+                                    className="secondary-button"
+                                >
+                                    {isChecking
+                                        ? 'Checking...'
+                                        : "I've verified my email"}
+                                </button>
+
+                            </div>
+
+                            {error && (
+                                <div className="auth-error">
+                                    {error}
+                                </div>
+                            )}
+
+                            {success && (
+                                <div className="auth-success">
+                                    {success}
+                                </div>
+                            )}
+
+                            <p className="verification-help">
+                                Didn't receive the email?
+                                Check your spam or junk folder.
+                            </p>
+
+                        </div>
+                    )}
+
+                    {/* Login form */}
+                    {!verificationRequired && (
+                        <form
+                            onSubmit={handleLoginSubmit}
+                            className="auth-form"
+                        >
+
+                            <div className="form-group">
+
+                                <label htmlFor="email">
+                                    Email
+                                </label>
+
+                                <input
+                                    id="email"
+                                    type="email"
+                                    value={email}
+                                    onChange={(event) =>
+                                        setEmail(
+                                            event.target.value
+                                        )
+                                    }
+                                    placeholder="Enter your email"
+                                    autoComplete="email"
+                                />
+
+                            </div>
+
+                            <div className="form-group">
+
+                                <label htmlFor="password">
+                                    Password
+                                </label>
+
+                                <input
+                                    id="password"
+                                    type="password"
+                                    value={password}
+                                    onChange={(event) =>
+                                        setPassword(
+                                            event.target.value
+                                        )
+                                    }
+                                    placeholder="Enter your password"
+                                    autoComplete="current-password"
+                                />
+
+                            </div>
+
+                            <button
+                                type="submit"
+                                disabled={isLoading}
+                                className="primary-button"
+                            >
+                                {isLoading
+                                    ? 'Logging in...'
+                                    : 'Log In'}
+                            </button>
+
+                        </form>
+                    )}
+
+                    {/* Forgot password */}
+                    {!verificationRequired && (
+                        <div className="forgot-password-section">
+
+                            {!showReset ? (
+                                <button
+                                    type="button"
+                                    className="forgot-password-btn"
+                                    onClick={() => {
+                                        setShowReset(true);
+                                        setError('');
+                                    }}
+                                >
+                                    Forgot your password?
+                                </button>
+                            ) : (
+                                <div className="reset-password-box">
+
+                                    <h3>
+                                        Reset your password
+                                    </h3>
+
+                                    <p>
+                                        Enter your email address
+                                        and we'll send you a
+                                        password reset link.
+                                    </p>
+
+                                    <button
+                                        type="button"
+                                        onClick={
+                                            handlePasswordReset
+                                        }
+                                        className="secondary-button"
+                                    >
+                                        Send reset email
+                                    </button>
+
+                                    {resetMessage && (
+                                        <div className="auth-success">
+                                            {resetMessage}
+                                        </div>
+                                    )}
+
+                                    <button
+                                        type="button"
+                                        className="forgot-password-btn"
+                                        onClick={() => {
+                                            setShowReset(false);
+                                            setResetMessage('');
+                                            setError('');
+                                        }}
+                                    >
+                                        Back to login
+                                    </button>
+
+                                </div>
+                            )}
+
+                        </div>
+                    )}
+
+                    {!verificationRequired && (
+                        <div className="auth-footer">
+                            <p>
+                                Don't have an account?
+                            </p>
+
+                            <button
+                                type="button"
+                                className="link-button"
+                                onClick={() =>
+                                    navigate('/signup')
+                                }
+                            >
+                                Create an account
+                            </button>
+                        </div>
+                    )}
+
+                </div>
+
+            </div>
 
         </div>
-
-
-        <h2>Login</h2>
-
-
-        {/* Error message */}
-
-        {errorMessage && (
-
-          <div className="auth-feedback-banner error">
-
-            {errorMessage}
-
-          </div>
-
-        )}
-
-
-        <form
-          onSubmit={handleLoginSubmit}
-          className="auth-form"
-          noValidate
-        >
-
-
-          {/* Email */}
-
-          <div className="form-group">
-
-            <label htmlFor="login-email">
-              Your email
-            </label>
-
-            <input
-              id="login-email"
-              type="email"
-              placeholder="Enter your email"
-              value={email}
-              onChange={(e) =>
-                setEmail(e.target.value)
-              }
-            />
-
-          </div>
-
-
-          {/* Password */}
-
-          <div className="form-group">
-
-            <label htmlFor="login-password">
-              Your password
-            </label>
-
-            <input
-              id="login-password"
-              type="password"
-              placeholder="Enter your password"
-              value={password}
-              onChange={(e) =>
-                setPassword(e.target.value)
-              }
-            />
-
-          </div>
-
-
-          {/* Login button */}
-
-          <button
-            type="submit"
-            className="auth-submit-btn"
-            disabled={isLoading}
-          >
-
-            {isLoading
-              ? 'Signing in...'
-              : 'Login'
-            }
-
-          </button>
-
-        </form>
-
-      </div>
-
-    </div>
-
-  );
-
+    );
 }
 
 export default LoginPage;
