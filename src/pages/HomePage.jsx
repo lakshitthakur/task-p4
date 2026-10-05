@@ -54,16 +54,14 @@ const Homepage = () => {
             />
 
             <div className="project-content">
-              <h3>Secure Web App</h3>
+              <h3>Facebook duplicate</h3>
 
               <p>
-                A website developed as an educational project inspired by
-                social media platforms. The project focuses on frontend
-                development, responsive design and user interface structure.
+                A website that is just a duplicate of facebook.
               </p>
 
               <a
-                href="https://github.com/lakshitthakur/task-p4"
+                href="https://github.com/lakshitthakur/facebookcopy"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="project-link"
@@ -82,17 +80,14 @@ const Homepage = () => {
             />
 
             <div className="project-content">
-              <h3>Data Analytics Dashboard</h3>
+              <h3>Netflix Duplicate</h3>
 
               <p>
-                A dashboard-style web project inspired by streaming
-                platforms. It was developed for educational and
-                entertainment purposes and demonstrates frontend layout
-                and visual presentation.
+                A website that is duplicate of netflix.
               </p>
 
               <a
-                href="https://github.com/lakshitthakur/task-p4"
+                href="https://github.com/lakshitthakur/netflixcopy"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="project-link"
